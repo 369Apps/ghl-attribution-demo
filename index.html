@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GHL Lead Source Capture Demo | No BS AI</title>
+<meta name="description" content="Demo: capture UTM, fbclid and referrer on a lead form, keep first and last touch, and map them to GoHighLevel contact fields and opportunity source.">
+<style>
+  :root { --ink:#111; --muted:#555; --line:#ddd; --accent:#0a7cff; --bg:#fafafa; }
+  * { box-sizing:border-box; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:var(--ink); background:var(--bg); margin:0; line-height:1.5; }
+  header, main, footer { max-width:960px; margin:0 auto; padding:16px 20px; }
+  h1 { font-size:1.6rem; margin:.4em 0; }
+  h2 { font-size:1.2rem; margin-top:2em; border-bottom:1px solid var(--line); padding-bottom:4px; }
+  p.lead { color:var(--muted); }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:20px; }
+  @media (max-width:760px){ .grid { grid-template-columns:1fr; } }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px; }
+  label { display:block; font-size:.9rem; margin-top:10px; }
+  input[type=text], input[type=email], input[type=tel] { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; font-size:1rem; }
+  button { margin-top:14px; background:var(--accent); color:#fff; border:0; border-radius:6px; padding:10px 16px; font-size:1rem; cursor:pointer; }
+  button.secondary { background:#666; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; background:#fff; }
+  th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  th { background:#f0f0f0; }
+  code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:.85rem; }
+  pre { background:#111; color:#e8e8e8; padding:12px; border-radius:8px; overflow:auto; max-height:360px; }
+  .pill { display:inline-block; background:#eef5ff; color:#0a4fa8; border-radius:999px; padding:2px 10px; font-size:.8rem; margin:2px; text-decoration:none; }
+  .note { font-size:.85rem; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Lead source capture for GoHighLevel</h1>
+  <p class="lead">A small working demo by No BS AI. It shows how a lead form can keep the ad source (UTMs, Facebook click ID, referrer) so the data still lives on the contact and the opportunity in GoHighLevel after forms, calendars and workflows.</p>
+  <p class="note">Try it: open this page with test UTMs, for example
+    <a class="pill" href="?utm_source=facebook&utm_medium=paid_social&utm_campaign=2026-11_coach-webinar_lead&utm_content=video-a_hook1&fbclid=TEST123">Ads Manager link</a>
+    <a class="pill" href="?utm_source=facebook&utm_medium=boosted_post&utm_campaign=2026-11_boost_testimonial-post&utm_content=post-1103">Boosted post link</a>
+    <a class="pill" href="?">No UTMs</a>
+    Nothing is sent anywhere. Submitting only shows the payload that would go to the webhook.</p>
+</header>
+
+<main>
+  <div class="grid">
+    <div class="card">
+      <h2 style="margin-top:0">1. Lead form</h2>
+      <form id="leadForm" autocomplete="off">
+        <label>First name <input type="text" name="first_name" value="Test"></label>
+        <label>Email <input type="email" name="email" value="test@example.com"></label>
+        <label>Phone <input type="tel" name="phone" value="+15555550100"></label>
+        <!-- Hidden attribution fields, filled by the script below -->
+        <input type="hidden" name="utm_source">
+        <input type="hidden" name="utm_medium">
+        <input type="hidden" name="utm_campaign">
+        <input type="hidden" name="utm_content">
+        <input type="hidden" name="utm_term">
+        <input type="hidden" name="fbclid">
+        <input type="hidden" name="fbc">
+        <input type="hidden" name="referrer">
+        <input type="hidden" name="landing_page">
+        <input type="hidden" name="ft_source">
+        <input type="hidden" name="ft_medium">
+        <input type="hidden" name="ft_campaign">
+        <input type="hidden" name="ft_timestamp">
+        <input type="hidden" name="lt_source">
+        <input type="hidden" name="lt_medium">
+        <input type="hidden" name="lt_campaign">
+        <input type="hidden" name="lt_timestamp">
+        <button type="submit">Submit (demo only)</button>
+        <button type="button" class="secondary" id="resetBtn">Clear stored touches</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">2. What the hidden fields hold</h2>
+      <table id="hiddenTable"><tbody></tbody></table>
+      <p class="note">First touch is saved once and never overwritten. Last touch updates on every visit that carries UTMs or a click ID. Both live in localStorage, so a lead who clicks an ad today and books next week still carries the source.</p>
+    </div>
+  </div>
+
+  <h2>3. Payload sent to the n8n webhook</h2>
+  <pre id="payload">Submit the form to see the payload.</pre>
+
+  <h2>4. How it maps into GoHighLevel</h2>
+  <table>
+    <thead><tr><th>Form / script value</th><th>GHL contact custom field (key)</th><th>Where it is used</th></tr></thead>
+    <tbody>
+      <tr><td>ft_source / ft_medium / ft_campaign</td><td>contact.first_touch_source / first_touch_medium / first_touch_campaign</td><td>Never overwritten. Answers "which ad first brought this person in".</td></tr>
+      <tr><td>lt_source / lt_medium / lt_campaign</td><td>contact.last_touch_source / last_touch_medium / last_touch_campaign</td><td>Updated on each form fill. Answers "what made them convert".</td></tr>
+      <tr><td>utm_content</td><td>contact.utm_content</td><td>Ad or post creative level reporting.</td></tr>
+      <tr><td>fbclid / fbc</td><td>contact.fbclid / contact.fbc</td><td>Sent back with Conversions API events to match Meta clicks.</td></tr>
+      <tr><td>referrer / landing_page</td><td>contact.referrer / contact.landing_page</td><td>Debugging and organic traffic.</td></tr>
+      <tr><td>lt_source + lt_campaign</td><td>Contact "source" (standard field)</td><td>Shows in the contact record and in GHL source reports.</td></tr>
+      <tr><td>first touch fields</td><td>Opportunity source + opportunity custom fields</td><td>A workflow copies the contact fields onto the opportunity when it is created (form, calendar booking or manual), so revenue reports by source work even after the lead moves stages.</td></tr>
+    </tbody>
+  </table>
+  <p class="note">Key rule: calendars and later forms often create or update the contact without UTMs. Writing to dedicated first touch fields that workflows never overwrite is what stops the source from dropping.</p>
+
+  <h2>5. UTM naming convention</h2>
+  <table>
+    <thead><tr><th>Parameter</th><th>Rule</th><th>Ads Manager example</th><th>Boosted post example</th></tr></thead>
+    <tbody>
+      <tr><td>utm_source</td><td>Platform, lowercase</td><td>facebook or instagram</td><td>facebook or instagram</td></tr>
+      <tr><td>utm_medium</td><td>Type of traffic</td><td>paid_social</td><td>boosted_post</td></tr>
+      <tr><td>utm_campaign</td><td>yyyy-mm_offer_goal</td><td>2026-11_coach-webinar_lead</td><td>2026-11_boost_testimonial-post</td></tr>
+      <tr><td>utm_content</td><td>Creative or post ID</td><td>video-a_hook1 (or {{ad.name}})</td><td>post-1103</td></tr>
+      <tr><td>utm_term</td><td>Audience</td><td>lookalike-1pct (or {{adset.name}})</td><td>followers</td></tr>
+    </tbody>
+  </table>
+  <p class="note">Ads Manager supports dynamic URL parameters such as {{campaign.name}} and {{ad.name}} in the URL parameters box. Boosted posts usually do not give you the same control, so links in the post or button need the UTMs typed in by hand. When a boosted post sends people to Messenger, Instagram DM or an instant form, there is no page visit, so UTMs cannot be captured on a website and the source has to be set in the GHL workflow or integration instead.</p>
+
+  <h2>6. The n8n side</h2>
+  <p>The matching n8n workflow (in the public repo <code>ghl-attribution-demo</code> by 369Apps on GitHub) does this:</p>
+  <ol>
+    <li>Webhook receives the form payload above.</li>
+    <li>Code node cleans the values and builds the GHL custom field list.</li>
+    <li>HTTP node calls the GHL API contact upsert (by email or phone) with source and custom fields.</li>
+    <li>First touch fields are only written when empty, so a returning lead keeps the original source.</li>
+  </ol>
+</main>
+
+<footer class="note">
+  No BS AI demo. Built Nov 2026. No data leaves your browser on this page.
+</footer>
+
+<script>
+(function () {
+  var KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'];
+  var params = new URLSearchParams(window.location.search);
+  var now = new Date().toISOString();
+
+  function read(k){ try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch(e){ return null; } }
+  function write(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
+
+  var current = {};
+  KEYS.forEach(function(k){ var v = params.get(k); if (v) current[k] = v.trim().toLowerCase(); });
+  var fbclid = params.get('fbclid');
+  if (fbclid) current.fbclid = fbclid;
+  var ref = document.referrer || '';
+  var refHost = '';
+  try { refHost = ref ? new URL(ref).hostname : ''; } catch(e) {}
+
+  // If no UTMs but there is an external referrer, treat it as organic referral.
+  var hasCampaign = !!(current.utm_source || current.fbclid);
+  if (!hasCampaign && refHost && refHost !== location.hostname) {
+    current.utm_source = refHost.replace(/^www\./,'');
+    current.utm_medium = 'referral';
+    hasCampaign = true;
+  }
+  if (current.fbclid && !current.utm_source) { current.utm_source = 'facebook'; current.utm_medium = current.utm_medium || 'paid_social'; }
+
+  var touch = hasCampaign ? Object.assign({ timestamp: now, landing_page: location.href.split('#')[0], referrer: ref }, current) : null;
+
+  // First touch: set once. Last touch: refresh whenever a new campaign touch arrives.
+  if (touch && !read('nbs_first_touch')) write('nbs_first_touch', touch);
+  if (touch) write('nbs_last_touch', touch);
+  if (!read('nbs_first_touch')) write('nbs_first_touch', { utm_source:'direct', utm_medium:'none', timestamp: now, landing_page: location.href.split('#')[0], referrer: ref });
+
+  // Meta _fbc cookie format: fb.1.<ms timestamp>.<fbclid>
+  if (current.fbclid) {
+    var fbc = 'fb.1.' + Date.now() + '.' + current.fbclid;
+    document.cookie = '_fbc=' + fbc + '; path=/; max-age=' + 60*60*24*90 + '; SameSite=Lax';
+    write('nbs_fbc', fbc);
+  }
+
+  var ft = read('nbs_first_touch') || {};
+  var lt = read('nbs_last_touch') || ft;
+  var form = document.getElementById('leadForm');
+
+  function set(name, val){ var el = form.elements[name]; if (el) el.value = val || ''; }
+  KEYS.forEach(function(k){ set(k, lt[k]); });
+  set('fbclid', lt.fbclid);
+  set('fbc', read('nbs_fbc'));
+  set('referrer', lt.referrer);
+  set('landing_page', lt.landing_page);
+  set('ft_source', ft.utm_source); set('ft_medium', ft.utm_medium); set('ft_campaign', ft.utm_campaign); set('ft_timestamp', ft.timestamp);
+  set('lt_source', lt.utm_source); set('lt_medium', lt.utm_medium); set('lt_campaign', lt.utm_campaign); set('lt_timestamp', lt.timestamp);
+
+  var tbody = document.querySelector('#hiddenTable tbody');
+  Array.prototype.forEach.call(form.querySelectorAll('input[type=hidden]'), function(el){
+    var tr = document.createElement('tr');
+    var a = document.createElement('td'); a.textContent = el.name;
+    var b = document.createElement('td'); b.textContent = el.value || '(empty)';
+    tr.appendChild(a); tr.appendChild(b); tbody.appendChild(tr);
+  });
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var data = {};
+    new FormData(form).forEach(function(v,k){ data[k] = v; });
+    document.getElementById('payload').textContent = JSON.stringify(data, null, 2);
+  });
+  document.getElementById('resetBtn').addEventListener('click', function(){
+    ['nbs_first_touch','nbs_last_touch','nbs_fbc'].forEach(function(k){ localStorage.removeItem(k); });
+    location.href = location.pathname;
+  });
+})();
+</script>
+</body>
+</html>

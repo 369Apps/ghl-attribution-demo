@@ -1,0 +1,98 @@
+{
+  "name": "GHL lead source capture: webhook to contact upsert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ghl-lead-source",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1",
+      "name": "Form Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "ghl-lead-source"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://services.leadconnectorhq.com/contacts/search/duplicate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "locationId", "value": "={{ $env.GHL_LOCATION_ID }}" },
+            { "name": "email", "value": "={{ $json.body.email }}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ { "name": "Version", "value": "2021-07-28" } ]
+        },
+        "options": {}
+      },
+      "id": "a2",
+      "name": "Find Existing Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 300],
+      "continueOnFail": true,
+      "credentials": { "httpHeaderAuth": { "id": "", "name": "GHL Private Integration (Authorization: Bearer ...)" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build the GHL upsert body. First touch fields are only written when the contact does not have them yet.\nconst form = $('Form Webhook').first().json.body || {};\nconst existing = ($input.first().json && $input.first().json.contact) || null;\nconst existingFields = {};\nif (existing && Array.isArray(existing.customFields)) {\n  for (const f of existing.customFields) existingFields[f.id] = f.value;\n}\nconst clean = v => (v === undefined || v === null) ? '' : String(v).trim().slice(0, 250);\n\n// Map form values to GHL custom field keys. Create these fields in GHL first.\nconst lastTouch = {\n  last_touch_source: form.lt_source,\n  last_touch_medium: form.lt_medium,\n  last_touch_campaign: form.lt_campaign,\n  utm_content: form.utm_content,\n  utm_term: form.utm_term,\n  fbclid: form.fbclid,\n  fbc: form.fbc,\n  referrer: form.referrer,\n  landing_page: form.landing_page\n};\nconst firstTouch = {\n  first_touch_source: form.ft_source,\n  first_touch_medium: form.ft_medium,\n  first_touch_campaign: form.ft_campaign,\n  first_touch_date: form.ft_timestamp\n};\n\nconst customFields = [];\nfor (const [key, val] of Object.entries(lastTouch)) {\n  if (clean(val)) customFields.push({ key, field_value: clean(val) });\n}\n// Only send first touch for new contacts, so it is never overwritten.\nif (!existing) {\n  for (const [key, val] of Object.entries(firstTouch)) {\n    if (clean(val)) customFields.push({ key, field_value: clean(val) });\n  }\n}\n\nconst source = [clean(form.lt_source) || 'direct', clean(form.lt_medium), clean(form.lt_campaign)].filter(Boolean).join(' / ');\n\nreturn [{ json: {\n  locationId: $env.GHL_LOCATION_ID,\n  firstName: clean(form.first_name),\n  email: clean(form.email),\n  phone: clean(form.phone),\n  source,\n  tags: [clean(form.lt_medium) === 'boosted_post' ? 'src-boosted-post' : (clean(form.lt_medium) === 'paid_social' ? 'src-meta-ads' : 'src-other')],\n  customFields,\n  _isNewContact: !existing\n} }];"
+      },
+      "id": "a3",
+      "name": "Build Upsert Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/upsert",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ { "name": "Version", "value": "2021-07-28" } ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ locationId: $json.locationId, firstName: $json.firstName, email: $json.email, phone: $json.phone, source: $json.source, tags: $json.tags, customFields: $json.customFields }) }}",
+        "options": {}
+      },
+      "id": "a4",
+      "name": "GHL Contact Upsert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 300],
+      "credentials": { "httpHeaderAuth": { "id": "", "name": "GHL Private Integration (Authorization: Bearer ...)" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, contactId: $json.contact ? $json.contact.id : null, new: $json.new }) }}",
+        "options": {}
+      },
+      "id": "a5",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [960, 300]
+    }
+  ],
+  "connections": {
+    "Form Webhook": { "main": [[{ "node": "Find Existing Contact", "type": "main", "index": 0 }]] },
+    "Find Existing Contact": { "main": [[{ "node": "Build Upsert Body", "type": "main", "index": 0 }]] },
+    "Build Upsert Body": { "main": [[{ "node": "GHL Contact Upsert", "type": "main", "index": 0 }]] },
+    "GHL Contact Upsert": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}
